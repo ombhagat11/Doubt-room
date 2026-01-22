@@ -90,22 +90,26 @@ frontend/
 ### Backend Setup
 
 1. **Install Dependencies**
+
 ```bash
 cd backend
 npm install
 ```
 
 2. **Configure Environment**
+
 - Copy `.env.example` to `.env`
 - Update MongoDB URI if needed
 - Change JWT_SECRET in production
 
 3. **Start MongoDB** (if local)
+
 ```bash
 mongod
 ```
 
 4. **Run Backend**
+
 ```bash
 npm run dev
 ```
@@ -115,19 +119,22 @@ Backend will run on `http://localhost:5000`
 ### Frontend Setup
 
 1. **Install Dependencies**
+
 ```bash
 cd frontend
 npm install
 ```
 
 2. **Create Environment File** (optional)
-Create `frontend/.env`:
+   Create `frontend/.env`:
+
 ```
 VITE_API_URL=http://localhost:5000/api
 VITE_SOCKET_URL=http://localhost:5000
 ```
 
 3. **Run Frontend**
+
 ```bash
 npm run dev
 ```
@@ -139,23 +146,27 @@ Frontend will run on `http://localhost:5173`
 ## 📊 Database Schema
 
 ### User
+
 - Authentication & profile
 - Role: student/mentor/admin
 - Reputation system
 - Activity tracking
 
 ### Room
+
 - Topic categorization
 - Active user tracking
 - Statistics (questions, resolution rate)
 
 ### Question
+
 - Linked to room & user
 - Resolution status
 - Pin capability
 - Priority levels
 
 ### Answer
+
 - Linked to question & user
 - Upvoting system
 - Accepted answer marking
@@ -166,6 +177,7 @@ Frontend will run on `http://localhost:5173`
 ## 🔌 Socket.IO Events
 
 ### Client → Server
+
 - `joinRoom` - Join a topic room
 - `leaveRoom` - Leave current room
 - `askQuestion` - Post new question
@@ -176,6 +188,7 @@ Frontend will run on `http://localhost:5173`
 - `typing` - Typing indicator
 
 ### Server → Client
+
 - `userJoined` - New user in room
 - `userLeft` - User left room
 - `newQuestion` - Question posted
@@ -190,6 +203,7 @@ Frontend will run on `http://localhost:5173`
 ## 🎨 UI/UX Features
 
 ### Design System
+
 - **Colors**: Custom primary/secondary palette
 - **Typography**: Inter + Outfit fonts
 - **Components**: Reusable btn, card, input, badge classes
@@ -197,6 +211,7 @@ Frontend will run on `http://localhost:5173`
 - **Dark Mode**: Full support
 
 ### Pages
+
 1. **Landing**: Hero, problem statement, features, CTA
 2. **Auth**: Clean login/register forms
 3. **Dashboard**: Room grid with live stats
@@ -222,22 +237,23 @@ Frontend will run on `http://localhost:5173`
 Use these talking points in interviews:
 
 1. **"Built a scalable real-time Q&A platform using MERN and WebSockets"**
+
    - Explain Socket.IO event architecture
    - Discuss room-based communication
-
 2. **"Designed event-driven architecture with Socket.IO for live collaboration"**
+
    - User presence tracking
    - Real-time state synchronization
-
 3. **"Implemented role-based access control and moderation features"**
+
    - Student/Mentor/Admin roles
    - Authorization middleware
-
 4. **"Optimized MongoDB schema for concurrent read/write operations"**
+
    - Compound indexes
    - Normalized vs denormalized data
-
 5. **"Applied rate limiting and security best practices"**
+
    - Spam prevention
    - JWT token management
 
@@ -245,32 +261,35 @@ Use these talking points in interviews:
 
 ## 🎯 Key Differentiators from Chat Apps
 
-| Feature | Chat App | DoubtRoom |
-|---------|----------|-----------|
-| Message Type | Ephemeral chat | Structured Q&A |
-| Organization | Chronological | Topic-based rooms |
-| Resolution | N/A | Mark as resolved |
-| Quality | No ranking | Upvoting system |
-| Roles | Equal users | Student/Mentor/Admin |
-| Moderation | Basic | Pin, resolve, reputation |
+| Feature      | Chat App       | DoubtRoom                |
+| ------------ | -------------- | ------------------------ |
+| Message Type | Ephemeral chat | Structured Q&A           |
+| Organization | Chronological  | Topic-based rooms        |
+| Resolution   | N/A            | Mark as resolved         |
+| Quality      | No ranking     | Upvoting system          |
+| Roles        | Equal users    | Student/Mentor/Admin     |
+| Moderation   | Basic          | Pin, resolve, reputation |
 
 ---
 
 ## 🚢 Deployment
 
 ### Backend (Render/Railway)
+
 1. Push to GitHub
 2. Connect to Render
 3. Add environment variables
 4. Deploy
 
 ### Frontend (Vercel/Netlify)
+
 1. Push to GitHub
 2. Connect to Vercel
 3. Add environment variables
 4. Deploy
 
 ### Database (MongoDB Atlas)
+
 1. Create cluster
 2. Get connection string
 3. Update backend .env
@@ -280,12 +299,14 @@ Use these talking points in interviews:
 ## 📝 API Endpoints
 
 ### Authentication
+
 - `POST /api/auth/register` - Create account
 - `POST /api/auth/login` - Login
 - `GET /api/auth/me` - Get current user
 - `PUT /api/auth/updateprofile` - Update profile
 
 ### Rooms
+
 - `GET /api/rooms` - List rooms
 - `GET /api/rooms/:id` - Get room details
 - `POST /api/rooms` - Create room (Mentor/Admin)
@@ -294,6 +315,7 @@ Use these talking points in interviews:
 - `GET /api/rooms/:id/stats` - Room statistics
 
 ### Questions
+
 - `GET /api/questions/room/:roomId` - Get room questions
 - `GET /api/questions/:id` - Get question
 - `POST /api/questions` - Ask question (rate limited)
@@ -302,6 +324,7 @@ Use these talking points in interviews:
 - `DELETE /api/questions/:id` - Delete question
 
 ### Answers
+
 - `GET /api/answers/question/:questionId` - Get answers
 - `POST /api/answers` - Submit answer
 - `PUT /api/answers/:id/vote` - Upvote/downvote
@@ -361,25 +384,26 @@ MIT License - Free to use for learning and portfolio
 ### Be Ready to Explain:
 
 1. **Why Socket.IO + REST together?**
+
    - REST for CRUD operations (stateless)
    - WebSockets for real-time updates (stateful)
-
 2. **Why separate Question and Answer models?**
+
    - Better querying (get questions without answers)
    - Independent voting/resolution
    - Scalability
-
 3. **How does rate limiting work?**
+
    - Prevents spam (3 questions per 5 min)
    - IP-based for public routes
    - User-based for authenticated routes
-
 4. **How do you handle authentication in Socket.IO?**
+
    - JWT token in handshake auth
    - Middleware verifies before connection
    - User ID attached to socket
-
 5. **What's your deployment strategy?**
+
    - Backend on Render (auto-deploy from GitHub)
    - Frontend on Vercel (CDN distribution)
    - MongoDB Atlas (managed database)
@@ -387,3 +411,8 @@ MIT License - Free to use for learning and portfolio
 ---
 
 **Remember**: This is NOT a chat app. It's a **problem-solving platform**. Emphasize the structured Q&A flow, moderation, and collaborative learning aspects.
+
+
+.
+
+.

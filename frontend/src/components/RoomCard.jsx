@@ -1,83 +1,102 @@
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
+import { Users, MessageSquare, CheckCircle2, Globe, Lock, Clock } from 'lucide-react';
 
 const RoomCard = ({ room }) => {
     const resolutionRate = room.totalQuestions > 0
         ? ((room.resolvedQuestions / room.totalQuestions) * 100).toFixed(0)
         : 0;
 
-    const topicColors = {
-        'DSA': 'bg-blue-100 text-blue-700',
-        'React': 'bg-cyan-100 text-cyan-700',
-        'Node.js': 'bg-green-100 text-green-700',
-        'MongoDB': 'bg-emerald-100 text-emerald-700',
-        'System Design': 'bg-purple-100 text-purple-700',
-        'DBMS': 'bg-orange-100 text-orange-700',
-        'OS': 'bg-red-100 text-red-700',
-        'Networks': 'bg-indigo-100 text-indigo-700',
-        'JavaScript': 'bg-yellow-100 text-yellow-700',
-        'Python': 'bg-teal-100 text-teal-700',
-        'Java': 'bg-rose-100 text-rose-700',
-        'Other': 'bg-slate-100 text-slate-700',
+    const topicStyles = {
+        'DSA': 'bg-blue-50 text-blue-600 border-blue-100',
+        'React': 'bg-cyan-50 text-cyan-600 border-cyan-100',
+        'Node.js': 'bg-green-50 text-green-600 border-green-100',
+        'MongoDB': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+        'System Design': 'bg-indigo-50 text-indigo-600 border-indigo-100',
+        'DBMS': 'bg-orange-50 text-orange-600 border-orange-100',
+        'OS': 'bg-red-50 text-red-600 border-red-100',
+        'Networks': 'bg-violet-50 text-violet-600 border-violet-100',
+        'JavaScript': 'bg-yellow-50 text-yellow-600 border-yellow-100',
+        'Python': 'bg-teal-50 text-teal-600 border-teal-100',
+        'Java': 'bg-rose-50 text-rose-600 border-rose-100',
+        'Other': 'bg-slate-50 text-slate-600 border-slate-100',
     };
 
     return (
-        <Link to={`/room/${room._id}`}>
-            <div className="card-hover p-6 h-full">
+        <Link to={`/room/${room._id}`} className="group block h-full">
+            <div className="card-modern p-6 flex flex-col h-full hover:border-primary-200 transition-all duration-300">
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-slate-900 mb-2 line-clamp-2">
-                            {room.title}
-                        </h3>
-                        <span className={`badge ${topicColors[room.topic] || topicColors['Other']}`}>
+                    <div>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${topicStyles[room.topic] || topicStyles['Other']} mb-3`}>
                             {room.topic}
                         </span>
+                        <h3 className="text-xl font-bold text-slate-900 group-hover:text-primary-600 transition-colors line-clamp-1">
+                            {room.title}
+                        </h3>
                     </div>
                     {room.activeCount > 0 && (
-                        <div className="flex items-center gap-1 text-success-600">
-                            <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
-                            <span className="text-sm font-medium">{room.activeCount} online</span>
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider">{room.activeCount} Live</span>
                         </div>
                     )}
                 </div>
 
                 {/* Description */}
-                {room.description && (
-                    <p className="text-slate-600 text-sm mb-4 line-clamp-2">
-                        {room.description}
-                    </p>
-                )}
+                <p className="text-slate-500 text-sm mb-6 line-clamp-2 font-medium flex-1">
+                    {room.description || "Join this room to discuss and resolve subject-specific doubts."}
+                </p>
 
-                {/* Stats */}
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className="text-center">
-                        <div className="text-2xl font-bold text-slate-900">{room.totalQuestions || 0}</div>
-                        <div className="text-xs text-slate-500">Questions</div>
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-slate-50 rounded-xl group-hover:bg-primary-50 transition-colors">
+                            <MessageSquare className="w-4 h-4 text-slate-400 group-hover:text-primary-500" />
+                        </div>
+                        <div>
+                            <p className="text-lg font-bold text-slate-900 leading-none mb-1">{room.totalQuestions || 0}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase">Doubts</p>
+                        </div>
                     </div>
-                    <div className="text-center">
-                        <div className="text-2xl font-bold text-success-600">{room.resolvedQuestions || 0}</div>
-                        <div className="text-xs text-slate-500">Resolved</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-2xl font-bold text-primary-600">{resolutionRate}%</div>
-                        <div className="text-xs text-slate-500">Success</div>
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-slate-50 rounded-xl group-hover:bg-emerald-50 transition-colors">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 group-hover:text-emerald-500" />
+                        </div>
+                        <div>
+                            <p className="text-lg font-bold text-slate-900 leading-none mb-1">{room.resolvedQuestions || 0}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase">Solved</p>
+                        </div>
                     </div>
                 </div>
 
-                {/* Footer */}
-                <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        {formatDistanceToNow(new Date(room.createdAt), { addSuffix: true })}
+                {/* Footer Section */}
+                <div className="pt-5 border-t border-slate-100 mt-auto">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-slate-400">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span className="text-xs font-bold italic">
+                                {formatDistanceToNow(new Date(room.createdAt), { addSuffix: true })}
+                            </span>
+                        </div>
+                        
+                        <div className="flex items-center gap-1.5">
+                            {room.isPublic ? (
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                                    <Globe className="w-3.5 h-3.5" />
+                                    <span>Public</span>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600">
+                                    <Lock className="w-3.5 h-3.5" />
+                                    <span>Private</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    {room.isPublic ? (
-                        <span className="badge badge-success text-xs">Public</span>
-                    ) : (
-                        <span className="badge badge-warning text-xs">Private</span>
-                    )}
                 </div>
             </div>
         </Link>
@@ -85,3 +104,4 @@ const RoomCard = ({ room }) => {
 };
 
 export default RoomCard;
+

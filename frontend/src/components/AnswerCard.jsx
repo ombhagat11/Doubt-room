@@ -1,4 +1,6 @@
 import { formatDistanceToNow } from 'date-fns';
+import { ThumbsUp, CheckCircle, Crown, MoreVertical } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const AnswerCard = ({ answer, onVote, onAccept, currentUser, questionOwnerId }) => {
     const hasVoted = answer.votedBy?.includes(currentUser?.id);
@@ -7,81 +9,83 @@ const AnswerCard = ({ answer, onVote, onAccept, currentUser, questionOwnerId }) 
         currentUser?.role === 'admin';
 
     return (
-        <div className={`card p-5 ${answer.isAccepted ? 'border-2 border-success-500 bg-success-50/20' : ''}`}>
-            {/* Header */}
-            <div className="flex items-start gap-4 mb-4">
-                {/* Vote Section */}
-                <div className="flex flex-col items-center gap-1">
+        <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`relative bg-white rounded-3xl p-6 border transition-all ${
+                answer.isAccepted 
+                ? 'border-emerald-200 bg-emerald-50/20 shadow-lg shadow-emerald-500/5' 
+                : 'border-slate-100 hover:border-slate-200 shadow-sm'
+            }`}
+        >
+            {answer.isAccepted && (
+                <div className="absolute -top-3 left-6 flex items-center gap-1.5 px-3 py-1 bg-emerald-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/30">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Best Answer
+                </div>
+            )}
+
+            <div className="flex gap-5">
+                {/* Side Actions (Vote) */}
+                <div className="flex flex-col items-center gap-2">
                     <button
                         onClick={() => onVote(answer._id)}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${hasVoted
-                                ? 'bg-primary-600 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-primary-100 hover:text-primary-600'
-                            }`}
-                        title={hasVoted ? 'Remove vote' : 'Upvote'}
+                        className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center transition-all ${
+                            hasVoted
+                            ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/30'
+                            : 'bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                        }`}
                     >
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                        </svg>
+                        <ThumbsUp className={`w-5 h-5 ${hasVoted ? 'fill-current' : ''}`} />
+                        <span className="text-xs font-black mt-0.5 leading-none">{answer.votes || 0}</span>
                     </button>
-                    <span className={`text-lg font-bold ${answer.votes > 0 ? 'text-primary-600' : 'text-slate-600'}`}>
-                        {answer.votes || 0}
-                    </span>
-                </div>
-
-                {/* Content */}
-                <div className="flex-1">
-                    {/* User Info */}
-                    <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-secondary-500 to-primary-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                            {answer.userId?.name?.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <span className="font-medium text-slate-900 text-sm">{answer.userId?.name}</span>
-                                {answer.isByMentor && (
-                                    <span className="badge badge-secondary text-xs">Mentor</span>
-                                )}
-                                {answer.isAccepted && (
-                                    <span className="badge badge-success text-xs flex items-center gap-1">
-                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                        </svg>
-                                        Accepted Answer
-                                    </span>
-                                )}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                                {formatDistanceToNow(new Date(answer.createdAt), { addSuffix: true })}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Answer Text */}
-                    <div className="prose prose-sm max-w-none mb-3">
-                        <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">
-                            {answer.text}
-                        </p>
-                    </div>
-
-                    {/* Actions */}
                     {!answer.isAccepted && canAccept && onAccept && (
-                        <div className="flex items-center gap-2 pt-2">
-                            <button
-                                onClick={() => onAccept(answer._id)}
-                                className="btn btn-outline text-xs flex items-center gap-1"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                                Accept Answer
-                            </button>
-                        </div>
+                        <button
+                            onClick={() => onAccept(answer._id)}
+                            className="w-11 h-11 rounded-2xl bg-white border border-slate-100 flex items-center justify-center text-slate-300 hover:text-emerald-500 hover:border-emerald-200 hover:bg-emerald-50 transition-all"
+                            title="Accept this answer"
+                        >
+                            <CheckCircle className="w-5 h-5" />
+                        </button>
                     )}
                 </div>
+
+                <div className="flex-1 min-w-0">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-900 font-black">
+                                {answer.userId?.name?.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h5 className="text-sm font-bold text-slate-900">{answer.userId?.name}</h5>
+                                    {answer.userId?.role === 'mentor' && (
+                                        <div className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-md text-[10px] font-black uppercase tracking-tighter">
+                                            <Crown className="w-2.5 h-2.5" />
+                                            Mentor
+                                        </div>
+                                    )}
+                                </div>
+                                <p className="text-[11px] font-bold text-slate-400 italic">
+                                    {formatDistanceToNow(new Date(answer.createdAt), { addSuffix: true })}
+                                </p>
+                            </div>
+                        </div>
+                        <button className="p-2 text-slate-300 hover:text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
+                            <MoreVertical className="w-5 h-5" />
+                        </button>
+                    </div>
+
+                    {/* Content */}
+                    <div className="text-slate-700 text-[15px] leading-relaxed font-medium whitespace-pre-wrap">
+                        {answer.text}
+                    </div>
+                </div>
             </div>
-        </div>
+        </motion.div>
     );
 };
 
 export default AnswerCard;
+
