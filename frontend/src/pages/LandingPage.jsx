@@ -20,7 +20,8 @@ import {
     Twitter,
     Github,
     Linkedin,
-    ExternalLink
+    ExternalLink,
+    Send
 } from 'lucide-react';
 
 const LandingPage = () => {
