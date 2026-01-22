@@ -1,10 +1,17 @@
+const path = require('path');
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const compression = require('compression');
+const hpp = require('hpp');
+const xss = require('xss-clean');
 const { Server } = require('socket.io');
 const connectDB = require('./config/db');
 const { apiLimiter } = require('./middleware/rateLimiter');
+const errorHandler = require('./middleware/error');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -20,16 +27,43 @@ connectDB();
 
 const app = express();
 
-// Middleware
+// Security Middlewares
+app.use(helmet()); // Set security headers
+app.use(xss()); // Prevent XSS attacks
+app.use(hpp()); // Prevent HTTP Parameter Pollution
+
+// Support CORS
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || '*',
   credentials: true
 }));
-app.use(express.json({ limit: '10mb' })); // Increased limit for image uploads
+
+// Logging
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined'));
+}
+
+// Optimization
+app.use(compression()); // Compress all responses
+
+// Body parser
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Apply rate limiting to all API routes
 app.use('/api/', apiLimiter);
+
+// Status route
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'DoubtRoom API is healthy',
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV || 'development'
+  });
+});
 
 // Routes
 app.get('/', (req, res) => {
@@ -51,23 +85,15 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/answers', answerRoutes);
 
-// Error handler
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
+// 404 handler
+app.use((req, res, next) => {
+    const error = new Error(`Route not found - ${req.originalUrl}`);
+    res.status(404);
+    next(error);
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Route not found'
-  });
-});
+// Advanced Error handling middleware
+app.use(errorHandler);
 
 // Create HTTP server
 const server = http.createServer(app);
@@ -75,28 +101,36 @@ const server = http.createServer(app);
 // Setup Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-    credentials: true
-  }
+    origin: process.env.FRONTEND_URL || '*',
+    credentials: true,
+    methods: ["GET", "POST"]
+  },
+  transports: ['websocket', 'polling']
 });
 
 // Initialize socket handlers
 socketHandler(io);
 
-// Start server
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log('='.repeat(50));
-  console.log(`🚀 DoubtRoom Server Running`);
-  console.log(`📍 Port: ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 API: http://localhost:${PORT}`);
-  console.log(`⚡ Socket.IO: Ready`);
-  console.log('='.repeat(50));
-});
+// Export for Vercel
+module.exports = app;
+
+// Start server only if not running on Vercel or if explicitly told
+if (require.main === module) {
+    const PORT = process.env.PORT || 5000;
+    server.listen(PORT, () => {
+        console.log('='.repeat(50));
+        console.log(`🚀 DoubtRoom Server Running`);
+        console.log(`📍 Port: ${PORT}`);
+        console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`⚡ Socket.IO: Ready`);
+        console.log('='.repeat(50));
+    });
+}
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
   console.error(`Unhandled Rejection: ${err.message}`);
-  server.close(() => process.exit(1));
+  // In production, we might want to shut down gracefully
+  // server.close(() => process.exit(1));
 });
+

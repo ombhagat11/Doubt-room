@@ -3,10 +3,26 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { getSocket } from '../utils/socket';
-import Navbar from '../components/Navbar';
+import Navbar from '../components/home/Navbar';
 import QuestionCard from '../components/QuestionCard';
 import AnswerCard from '../components/AnswerCard';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+    ArrowLeft, 
+    Plus, 
+    Users, 
+    MessageCircle, 
+    CheckCircle2, 
+    TrendingUp, 
+    Shield, 
+    Info, 
+    Image as ImageIcon, 
+    X,
+    Send,
+    Filter,
+    Activity
+} from 'lucide-react';
 
 const RoomPage = () => {
     const { id } = useParams();
@@ -31,15 +47,10 @@ const RoomPage = () => {
         fetchRoom();
         fetchQuestions();
 
-        // Initialize Socket.IO
         try {
             const socket = getSocket();
             socketRef.current = socket;
-
-            // Join room
             socket.emit('joinRoom', { roomId: id });
-
-            // Listen for events
             socket.on('userJoined', handleUserJoined);
             socket.on('userLeft', handleUserLeft);
             socket.on('newQuestion', handleNewQuestion);
@@ -59,55 +70,34 @@ const RoomPage = () => {
                 socket.off('answerUpvoted');
             };
         } catch (err) {
-            console.error('Socket initialization error:', err);
+            console.error('Socket error:', err);
         }
     }, [id]);
 
     useEffect(() => {
-        if (selectedQuestion) {
-            fetchAnswers(selectedQuestion._id);
-        }
+        if (selectedQuestion) fetchAnswers(selectedQuestion._id);
     }, [selectedQuestion]);
 
     useEffect(() => {
         fetchQuestions();
     }, [filter]);
 
-    // Socket event handlers
-    const handleUserJoined = (data) => {
-        setActiveUsers(data.activeUsers || []);
-    };
-
-    const handleUserLeft = (data) => {
-        setActiveUsers(data.activeUsers || []);
-    };
-
-    const handleNewQuestion = (data) => {
+    const handleUserJoined = (data) => setActiveUsers(data.activeUsers || []);
+    const handleUserLeft = (data) => setActiveUsers(data.activeUsers || []);
+    const handleNewQuestion = () => fetchQuestions();
+    const handleNewAnswer = (data) => {
+        if (selectedQuestion && data.questionId === selectedQuestion._id) fetchAnswers(selectedQuestion._id);
         fetchQuestions();
     };
-
-    const handleNewAnswer = (data) => {
-        if (selectedQuestion && data.questionId === selectedQuestion._id) {
-            fetchAnswers(selectedQuestion._id);
-        }
-        fetchQuestions(); // Update answer count
-    };
-
     const handleQuestionResolved = (data) => {
         fetchQuestions();
         if (selectedQuestion && data.questionId === selectedQuestion._id) {
             setSelectedQuestion({ ...selectedQuestion, isResolved: true });
         }
     };
-
-    const handleQuestionPinned = (data) => {
-        fetchQuestions();
-    };
-
-    const handleAnswerUpvoted = (data) => {
-        if (selectedQuestion) {
-            fetchAnswers(selectedQuestion._id);
-        }
+    const handleQuestionPinned = () => fetchQuestions();
+    const handleAnswerUpvoted = () => {
+        if (selectedQuestion) fetchAnswers(selectedQuestion._id);
     };
 
     const fetchRoom = async () => {
@@ -144,18 +134,8 @@ const RoomPage = () => {
     const handleImageUpload = (e) => {
         const file = e.target.files[0];
         if (file) {
-            // Check file size (max 2MB)
-            if (file.size > 2 * 1024 * 1024) {
-                setError('Image size must be less than 2MB');
-                return;
-            }
-
-            // Check file type
-            if (!file.type.startsWith('image/')) {
-                setError('Please upload an image file');
-                return;
-            }
-
+            if (file.size > 2 * 1024 * 1024) return setError('Image size must be less than 2MB');
+            if (!file.type.startsWith('image/')) return setError('Please upload an image file');
             const reader = new FileReader();
             reader.onloadend = () => {
                 setNewQuestion({ ...newQuestion, image: reader.result });
@@ -174,12 +154,7 @@ const RoomPage = () => {
                 priority: newQuestion.priority,
                 image: newQuestion.image
             });
-
-            // Emit socket event
-            if (socketRef.current) {
-                socketRef.current.emit('askQuestion', response.data.data);
-            }
-
+            if (socketRef.current) socketRef.current.emit('askQuestion', response.data.data);
             setNewQuestion({ text: '', priority: 'medium', image: null });
             setImagePreview(null);
             setShowQuestionForm(false);
@@ -192,21 +167,9 @@ const RoomPage = () => {
     const handleSubmitAnswer = async (e) => {
         e.preventDefault();
         if (!selectedQuestion) return;
-
         try {
-            const response = await api.post('/answers', {
-                questionId: selectedQuestion._id,
-                text: newAnswer
-            });
-
-            // Emit socket event
-            if (socketRef.current) {
-                socketRef.current.emit('answerQuestion', {
-                    questionId: selectedQuestion._id,
-                    answer: response.data.data
-                });
-            }
-
+            const response = await api.post('/answers', { questionId: selectedQuestion._id, text: newAnswer });
+            if (socketRef.current) socketRef.current.emit('answerQuestion', { questionId: selectedQuestion._id, answer: response.data.data });
             setNewAnswer('');
             setShowAnswerForm(false);
             fetchAnswers(selectedQuestion._id);
@@ -218,42 +181,27 @@ const RoomPage = () => {
     const handleResolveQuestion = async (questionId) => {
         try {
             await api.put(`/questions/${questionId}/resolve`);
-
-            // Emit socket event
-            if (socketRef.current) {
-                socketRef.current.emit('markResolved', { questionId });
-            }
-
+            if (socketRef.current) socketRef.current.emit('markResolved', { questionId });
             fetchQuestions();
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to resolve question');
+            setError(err.response?.data?.message || 'Failed to resolve');
         }
     };
 
     const handlePinQuestion = async (questionId) => {
         try {
             await api.put(`/questions/${questionId}/pin`);
-
-            // Emit socket event
-            if (socketRef.current) {
-                socketRef.current.emit('pinQuestion', { questionId });
-            }
-
+            if (socketRef.current) socketRef.current.emit('pinQuestion', { questionId });
             fetchQuestions();
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to pin question');
+            setError(err.response?.data?.message || 'Failed to pin');
         }
     };
 
     const handleVoteAnswer = async (answerId) => {
         try {
             await api.put(`/answers/${answerId}/vote`);
-
-            // Emit socket event
-            if (socketRef.current) {
-                socketRef.current.emit('upvoteAnswer', { answerId });
-            }
-
+            if (socketRef.current) socketRef.current.emit('upvoteAnswer', { answerId });
             fetchAnswers(selectedQuestion._id);
         } catch (err) {
             setError(err.response?.data?.message || 'Failed to vote');
@@ -265,441 +213,379 @@ const RoomPage = () => {
             await api.put(`/answers/${answerId}/accept`);
             fetchAnswers(selectedQuestion._id);
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to accept answer');
+            setError(err.response?.data?.message || 'Failed to accept');
         }
     };
 
     if (!room && !loading) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
                 <Navbar />
-                <div className="container-custom py-16 text-center">
-                    <h2 className="text-2xl font-bold text-slate-900 mb-4">Room not found</h2>
-                    <button onClick={() => navigate('/dashboard')} className="btn btn-primary">
-                        Back to Dashboard
-                    </button>
-                </div>
+                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
+                    <div className="w-24 h-24 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <X className="w-12 h-12 text-red-500" />
+                    </div>
+                    <h2 className="text-3xl font-[900] text-slate-900 mb-2 tracking-tight">Room not found</h2>
+                    <p className="text-slate-500 mb-8 font-medium">This room might have been deleted or is no longer accessible.</p>
+                    <button onClick={() => navigate('/dashboard')} className="btn btn-primary px-8">Return to Dashboard</button>
+                </motion.div>
             </div>
         );
     }
 
+    const successRate = room?.totalQuestions > 0 ? Math.round((room.resolvedQuestions / room.totalQuestions) * 100) : 0;
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+        <div className="min-h-screen bg-slate-50/50">
             <Navbar />
 
-            <div className="container-custom py-6">
-                {/* Room Header */}
-                <div className="card p-6 mb-6">
-                    <div className="flex items-start justify-between mb-4">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-12">
+                {/* Room Hero Header */}
+                <motion.div 
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-xl shadow-slate-200/50 mb-8 overflow-hidden relative"
+                >
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-primary-50 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl opacity-50" />
+                    
+                    <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-8">
                         <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                                <button
-                                    onClick={() => navigate('/dashboard')}
-                                    className="text-slate-600 hover:text-slate-900"
-                                >
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                                    </svg>
+                            <div className="flex items-center gap-4 mb-4">
+                                <button onClick={() => navigate('/dashboard')} className="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors">
+                                    <ArrowLeft className="w-5 h-5 text-slate-600" />
                                 </button>
-                                <h1 className="text-3xl font-display font-bold text-slate-900">
-                                    {room?.title}
-                                </h1>
-                                <span className="badge badge-primary">{room?.topic}</span>
+                                <span className="px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-[10px] font-black uppercase tracking-widest border border-primary-200">
+                                    {room?.topic}
+                                </span>
+                                {activeUsers.length > 0 && (
+                                    <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100">
+                                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                                        <span className="text-[10px] font-black uppercase tracking-widest">{activeUsers.length} Online</span>
+                                    </div>
+                                )}
                             </div>
-                            {room?.description && (
-                                <p className="text-slate-600 ml-9">{room.description}</p>
-                            )}
+                            <h1 className="text-4xl font-[900] text-slate-900 tracking-tight mb-2 leading-none uppercase">
+                                {room?.title}
+                            </h1>
+                            <p className="text-slate-500 font-medium text-lg leading-relaxed max-w-2xl">
+                                {room?.description || "Collaborative space for solving subject-specific doubts and mastering concepts together."}
+                            </p>
                         </div>
 
                         <div className="flex items-center gap-4">
-                            {activeUsers.length > 0 && (
-                                <div className="flex items-center gap-2 text-success-600">
-                                    <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
-                                    <span className="font-medium">{activeUsers.length} online</span>
+                            <div className="grid grid-cols-3 gap-6 pr-8 border-r border-slate-100 hidden sm:grid">
+                                <div className="text-center">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total</p>
+                                    <p className="text-2xl font-[900] text-slate-900">{room?.totalQuestions || 0}</p>
                                 </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Room Stats */}
-                    <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200">
-                        <div className="text-center">
-                            <div className="text-2xl font-bold text-slate-900">{room?.totalQuestions || 0}</div>
-                            <div className="text-sm text-slate-600">Total Questions</div>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-2xl font-bold text-success-600">{room?.resolvedQuestions || 0}</div>
-                            <div className="text-sm text-slate-600">Resolved</div>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-2xl font-bold text-primary-600">
-                                {room?.totalQuestions > 0
-                                    ? Math.round((room.resolvedQuestions / room.totalQuestions) * 100)
-                                    : 0}%
+                                <div className="text-center">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Solved</p>
+                                    <p className="text-2xl font-[900] text-emerald-600">{room?.resolvedQuestions || 0}</p>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Rate</p>
+                                    <p className="text-2xl font-[900] text-primary-600">{successRate}%</p>
+                                </div>
                             </div>
-                            <div className="text-sm text-slate-600">Success Rate</div>
+                            <button onClick={() => setShowQuestionForm(true)} className="btn btn-primary h-14 px-8 shadow-lg shadow-primary-600/30 font-black uppercase tracking-widest text-sm">
+                                <Plus className="w-5 h-5 mr-2" />
+                                Ask Doubt
+                            </button>
                         </div>
                     </div>
-                </div>
+                </motion.div>
 
                 {error && (
-                    <div className="bg-danger-50 border border-danger-200 text-danger-700 px-4 py-3 rounded-lg mb-6">
-                        {error}
+                    <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl mb-8 flex items-center gap-3 font-bold text-sm">
+                        <Activity className="w-5 h-5" /> {error}
                     </div>
                 )}
 
-                <div className="grid lg:grid-cols-3 gap-6">
-                    {/* Questions List */}
-                    <div className="lg:col-span-2 space-y-4">
-                        {/* Filters and Actions */}
-                        <div className="flex items-center justify-between">
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setFilter('pending')}
-                                    className={`px-4 py-2 rounded-lg font-medium text-sm ${filter === 'pending'
-                                        ? 'bg-primary-600 text-white'
-                                        : 'bg-white text-slate-700 hover:bg-slate-100'
+                <div className="grid lg:grid-cols-4 gap-8">
+                    {/* Filter Sidebar (Desktop) */}
+                    <div className="lg:col-span-1 space-y-6">
+                        <div className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-sm sticky top-28">
+                            <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                                <Filter className="w-4 h-4" /> Filters
+                            </h3>
+                            <nav className="space-y-2">
+                                {[
+                                    { id: 'pending', label: 'Pending Doubts', icon: <MessageCircle className="w-4.5 h-4.5" />, color: 'text-amber-500' },
+                                    { id: 'resolved', label: 'Resolved', icon: <CheckCircle2 className="w-4.5 h-4.5" />, color: 'text-emerald-500' },
+                                    { id: 'all', label: 'All Activity', icon: <TrendingUp className="w-4.5 h-4.5" />, color: 'text-primary-500' }
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setFilter(tab.id)}
+                                        className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-black text-sm transition-all ${
+                                            filter === tab.id 
+                                            ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20' 
+                                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                                         }`}
-                                >
-                                    Pending
-                                </button>
-                                <button
-                                    onClick={() => setFilter('resolved')}
-                                    className={`px-4 py-2 rounded-lg font-medium text-sm ${filter === 'resolved'
-                                        ? 'bg-primary-600 text-white'
-                                        : 'bg-white text-slate-700 hover:bg-slate-100'
-                                        }`}
-                                >
-                                    Resolved
-                                </button>
-                                <button
-                                    onClick={() => setFilter('all')}
-                                    className={`px-4 py-2 rounded-lg font-medium text-sm ${filter === 'all'
-                                        ? 'bg-primary-600 text-white'
-                                        : 'bg-white text-slate-700 hover:bg-slate-100'
-                                        }`}
-                                >
-                                    All
-                                </button>
-                            </div>
-
-                            <button
-                                onClick={() => setShowQuestionForm(true)}
-                                className="btn btn-primary"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                                Ask Question
-                            </button>
-                        </div>
-
-                        {/* Questions */}
-                        {loading ? (
-                            <LoadingSpinner text="Loading questions..." />
-                        ) : questions.length === 0 ? (
-                            <div className="card p-12 text-center">
-                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                    </svg>
-                                </div>
-                                <h3 className="text-lg font-semibold text-slate-900 mb-2">No questions yet</h3>
-                                <p className="text-slate-600 mb-4">Be the first to ask a question in this room!</p>
-                                <button onClick={() => setShowQuestionForm(true)} className="btn btn-primary">
-                                    Ask First Question
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                {questions.map((question) => (
-                                    <QuestionCard
-                                        key={question._id}
-                                        question={question}
-                                        currentUser={user}
-                                        onResolve={handleResolveQuestion}
-                                        onPin={handlePinQuestion}
-                                        onClick={() => setSelectedQuestion(question)}
-                                    />
+                                    >
+                                        <span className={filter === tab.id ? 'text-white' : tab.color}>{tab.icon}</span>
+                                        {tab.label}
+                                    </button>
                                 ))}
+                            </nav>
+
+                            <div className="mt-8 pt-8 border-t border-slate-50 space-y-6">
+                                <div>
+                                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                        <Users className="w-4 h-4" /> Presence
+                                    </h3>
+                                    <div className="flex -space-x-3 overflow-hidden p-1">
+                                        {activeUsers.slice(0, 5).map((u, i) => (
+                                            <div key={i} className="inline-block h-10 w-10 rounded-xl ring-4 ring-white bg-slate-100 flex items-center justify-center font-black text-xs text-slate-600 border border-slate-200 uppercase tracking-tighter">
+                                                {u.name?.charAt(0)}
+                                            </div>
+                                        ))}
+                                        {activeUsers.length > 5 && (
+                                            <div className="flex items-center justify-center h-10 w-10 rounded-xl ring-4 ring-white bg-slate-900 text-white text-[10px] font-black">
+                                                +{activeUsers.length - 5}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-400 font-bold mt-3 italic">
+                                        {activeUsers.length} members are currently active
+                                    </p>
+                                </div>
+
+                                <div className="bg-primary-50 rounded-2xl p-4">
+                                    <div className="flex items-center gap-2 text-primary-700 font-black text-[10px] uppercase tracking-widest mb-2">
+                                        <Shield className="w-3.5 h-3.5" /> Mentor Help
+                                    </div>
+                                    <p className="text-[11px] text-primary-600 font-bold leading-relaxed">
+                                        Mentors are online to verify solutions. Look for the crown icon.
+                                    </p>
+                                </div>
                             </div>
-                        )}
+                        </div>
                     </div>
 
-                    {/* Sidebar */}
-                    <div className="space-y-6">
-                        {/* Active Users */}
-                        {activeUsers.length > 0 && (
-                            <div className="card p-5">
-                                <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                                    <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
-                                    Active Users ({activeUsers.length})
-                                </h3>
-                                <div className="space-y-2">
-                                    {activeUsers.slice(0, 10).map((activeUser, index) => (
-                                        <div key={index} className="flex items-center gap-2">
-                                            <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                                                {activeUser.name?.charAt(0).toUpperCase()}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-medium text-slate-900 truncate">{activeUser.name}</div>
-                                                <div className="text-xs text-slate-500 capitalize">{activeUser.role}</div>
-                                            </div>
-                                        </div>
-                                    ))}
+                    {/* Main Questions Feed */}
+                    <div className="lg:col-span-3">
+                        {loading ? (
+                            <LoadingSpinner text="Synchronizing doubts..." />
+                        ) : questions.length === 0 ? (
+                            <motion.div 
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="bg-white rounded-[40px] p-16 border-2 border-dashed border-slate-200 text-center"
+                            >
+                                <div className="w-24 h-24 bg-slate-50 rounded-[32px] flex items-center justify-center mx-auto mb-8">
+                                    <MessageCircle className="w-12 h-12 text-slate-200" />
                                 </div>
+                                <h3 className="text-2xl font-[900] text-slate-900 mb-2 uppercase italic tracking-tighter">Silence in the room...</h3>
+                                <p className="text-slate-400 font-medium max-w-sm mx-auto mb-10">
+                                    Everything is clear, or is it? Be the brave one to ask the first doubt!
+                                </p>
+                                <button onClick={() => setShowQuestionForm(true)} className="btn btn-secondary h-14 px-10">
+                                    Start a Conversation
+                                </button>
+                            </motion.div>
+                        ) : (
+                            <div className="space-y-6">
+                                <AnimatePresence mode="popLayout">
+                                    {questions.map((question) => (
+                                        <QuestionCard
+                                            key={question._id}
+                                            question={question}
+                                            currentUser={user}
+                                            onResolve={handleResolveQuestion}
+                                            onPin={handlePinQuestion}
+                                            onClick={() => setSelectedQuestion(question)}
+                                        />
+                                    ))}
+                                </AnimatePresence>
                             </div>
                         )}
-
-                        {/* Room Guidelines */}
-                        <div className="card p-5">
-                            <h3 className="font-semibold text-slate-900 mb-3">Room Guidelines</h3>
-                            <ul className="space-y-2 text-sm text-slate-600">
-                                <li className="flex items-start gap-2">
-                                    <svg className="w-5 h-5 text-success-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
-                                    <span>Ask clear, specific questions</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <svg className="w-5 h-5 text-success-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
-                                    <span>Provide helpful answers</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <svg className="w-5 h-5 text-success-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
-                                    <span>Upvote quality answers</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <svg className="w-5 h-5 text-success-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
-                                    <span>Mark questions as resolved</span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <svg className="w-5 h-5 text-success-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
-                                    <span>Be respectful and collaborative</span>
-                                </li>
-                            </ul>
-                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Ask Question Modal */}
-            {showQuestionForm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="card max-w-2xl w-full p-6 animate-slide-up max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-2xl font-bold text-slate-900">Ask a Question</h2>
-                            <button
-                                onClick={() => setShowQuestionForm(false)}
-                                className="text-slate-400 hover:text-slate-600"
-                            >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleAskQuestion} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Your Question *
-                                </label>
-                                <textarea
-                                    required
-                                    className="textarea"
-                                    rows="6"
-                                    placeholder="Describe your doubt in detail..."
-                                    value={newQuestion.text}
-                                    onChange={(e) => setNewQuestion({ ...newQuestion, text: e.target.value })}
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Be specific and provide context for better answers
-                                </p>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Priority
-                                </label>
-                                <select
-                                    className="input"
-                                    value={newQuestion.priority}
-                                    onChange={(e) => setNewQuestion({ ...newQuestion, priority: e.target.value })}
-                                >
-                                    <option value="low">Low</option>
-                                    <option value="medium">Medium</option>
-                                    <option value="high">High</option>
-                                </select>
-                            </div>
-
-                            {/* Image Upload */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Attach Image (Optional)
-                                </label>
-                                <div className="flex items-center gap-4">
-                                    <label className="btn btn-outline cursor-pointer">
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                        </svg>
-                                        Choose Image
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={handleImageUpload}
-                                            className="hidden"
-                                        />
-                                    </label>
-                                    {imagePreview && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setNewQuestion({ ...newQuestion, image: null });
-                                                setImagePreview(null);
-                                            }}
-                                            className="text-danger-600 hover:text-danger-700 text-sm"
-                                        >
-                                            Remove
-                                        </button>
-                                    )}
-                                </div>
-                                {imagePreview && (
-                                    <div className="mt-3">
-                                        <img
-                                            src={imagePreview}
-                                            alt="Preview"
-                                            className="max-w-full h-auto max-h-64 rounded-lg border border-slate-200"
-                                        />
+            {/* Modal Components */}
+            <AnimatePresence>
+                {/* Ask Question Overlay */}
+                {showQuestionForm && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowQuestionForm(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 30 }}
+                            className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]"
+                        >
+                            <div className="p-10 overflow-y-auto">
+                                <div className="flex items-center justify-between mb-10">
+                                    <div>
+                                        <h2 className="text-3xl font-[900] text-slate-900 tracking-tight leading-none uppercase pr-10">Post a Doubt</h2>
+                                        <p className="text-slate-400 font-bold mt-2 uppercase text-[10px] tracking-[0.2em] italic">Get help from 5,000+ developers</p>
                                     </div>
-                                )}
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Max size: 2MB. Supported formats: JPG, PNG, GIF
-                                </p>
-                            </div>
-
-                            <div className="flex gap-3 pt-4">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowQuestionForm(false)}
-                                    className="btn btn-ghost flex-1"
-                                >
-                                    Cancel
-                                </button>
-                                <button type="submit" className="btn btn-primary flex-1">
-                                    Post Question
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Question Detail Modal */}
-            {selectedQuestion && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="card max-w-4xl w-full p-6 animate-slide-up max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-2xl font-bold text-slate-900">Question & Answers</h2>
-                            <button
-                                onClick={() => {
-                                    setSelectedQuestion(null);
-                                    setAnswers([]);
-                                }}
-                                className="text-slate-400 hover:text-slate-600"
-                            >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        {/* Question */}
-                        <QuestionCard
-                            question={selectedQuestion}
-                            currentUser={user}
-                            onResolve={handleResolveQuestion}
-                            onPin={handlePinQuestion}
-                            onClick={() => { }}
-                        />
-
-                        {/* Answers */}
-                        <div className="mt-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-semibold text-slate-900">
-                                    {answers.length} {answers.length === 1 ? 'Answer' : 'Answers'}
-                                </h3>
-                                {!selectedQuestion.isResolved && (
-                                    <button
-                                        onClick={() => setShowAnswerForm(!showAnswerForm)}
-                                        className="btn btn-primary text-sm"
-                                    >
-                                        {showAnswerForm ? 'Cancel' : 'Add Answer'}
+                                    <button onClick={() => setShowQuestionForm(false)} className="p-3 hover:bg-slate-50 rounded-2xl transition-colors">
+                                        <X className="w-6 h-6 text-slate-400" />
                                     </button>
-                                )}
-                            </div>
+                                </div>
 
-                            {/* Answer Form */}
-                            {showAnswerForm && (
-                                <form onSubmit={handleSubmitAnswer} className="mb-6">
-                                    <textarea
-                                        required
-                                        className="textarea"
-                                        rows="4"
-                                        placeholder="Write your answer..."
-                                        value={newAnswer}
-                                        onChange={(e) => setNewAnswer(e.target.value)}
-                                    />
-                                    <div className="flex gap-2 mt-2">
-                                        <button type="submit" className="btn btn-primary">
-                                            Submit Answer
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setShowAnswerForm(false);
-                                                setNewAnswer('');
-                                            }}
-                                            className="btn btn-ghost"
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </form>
-                            )}
-
-                            {/* Answers List */}
-                            <div className="space-y-4">
-                                {answers.length === 0 ? (
-                                    <div className="text-center py-8 text-slate-600">
-                                        No answers yet. Be the first to answer!
-                                    </div>
-                                ) : (
-                                    answers.map((answer) => (
-                                        <AnswerCard
-                                            key={answer._id}
-                                            answer={answer}
-                                            currentUser={user}
-                                            questionOwnerId={selectedQuestion.userId._id}
-                                            onVote={handleVoteAnswer}
-                                            onAccept={handleAcceptAnswer}
+                                <form onSubmit={handleAskQuestion} className="space-y-8">
+                                    <div className="relative">
+                                        <div className="absolute -top-3 left-6 px-2 bg-white text-[10px] font-black text-slate-400 uppercase tracking-widest z-10">Problem Description</div>
+                                        <textarea
+                                            required
+                                            className="input-modern min-h-[200px] resize-none pt-6 text-lg font-medium"
+                                            placeholder="Describe what you're struggling with in detail..."
+                                            value={newQuestion.text}
+                                            onChange={(e) => setNewQuestion({ ...newQuestion, text: e.target.value })}
                                         />
-                                    ))
-                                )}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="relative">
+                                            <div className="absolute -top-3 left-6 px-2 bg-white text-[10px] font-black text-slate-400 uppercase tracking-widest z-10">Urgency Level</div>
+                                            <select
+                                                className="input-modern bg-slate-50/50 border-transparent focus:bg-white"
+                                                value={newQuestion.priority}
+                                                onChange={(e) => setNewQuestion({ ...newQuestion, priority: e.target.value })}
+                                            >
+                                                <option value="low">Low Priority</option>
+                                                <option value="medium">Standard Priority</option>
+                                                <option value="high">Critical / High Priority</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="flex items-center group cursor-pointer h-full">
+                                                <div className="w-full h-full flex items-center justify-center gap-3 border-2 border-dashed border-slate-200 rounded-2xl hover:border-primary-400 hover:bg-primary-50 transition-all">
+                                                    <ImageIcon className="w-5 h-5 text-slate-400 group-hover:text-primary-600" />
+                                                    <span className="text-sm font-black text-slate-500 group-hover:text-primary-700">Attach Image</span>
+                                                </div>
+                                                <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    {imagePreview && (
+                                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative rounded-3xl overflow-hidden border-4 border-white shadow-xl">
+                                            <img src={imagePreview} alt="Preview" className="w-full h-auto max-h-64 object-cover" />
+                                            <button 
+                                                type="button" 
+                                                onClick={() => { setNewQuestion({ ...newQuestion, image: null }); setImagePreview(null); }}
+                                                className="absolute top-4 right-4 p-2 bg-red-500 text-white rounded-xl shadow-lg"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </motion.div>
+                                    )}
+
+                                    <button type="submit" className="btn btn-primary w-full py-5 text-base shadow-xl shadow-primary-600/30">
+                                        Post Question <Send className="w-4 h-4 ml-2" />
+                                    </button>
+                                </form>
                             </div>
-                        </div>
+                        </motion.div>
                     </div>
-                </div>
-            )}
+                )}
+
+                {/* Question Detail Overlay */}
+                {selectedQuestion && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-end">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedQuestion(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                        <motion.div 
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                            className="bg-slate-50 w-full max-w-3xl h-full shadow-2xl relative flex flex-col"
+                        >
+                            {/* Header */}
+                            <div className="bg-white p-6 border-b border-slate-100 flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <button onClick={() => setSelectedQuestion(null)} className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-400">
+                                        <X className="w-6 h-6" />
+                                    </button>
+                                    <h2 className="text-xl font-[900] text-slate-900 tracking-tight uppercase">Discussion</h2>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs font-bold text-slate-400">Doubt Status:</span>
+                                    <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${selectedQuestion.isResolved ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                                        {selectedQuestion.isResolved ? 'Resolved' : 'In Progress'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
+                                {/* The Original Question */}
+                                <div className="scale-105 origin-top mb-10">
+                                    <QuestionCard question={selectedQuestion} currentUser={user} onResolve={handleResolveQuestion} onPin={handlePinQuestion} onClick={() => {}} />
+                                </div>
+
+                                {/* Answers Section */}
+                                <div className="space-y-6">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h3 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                            <Info className="w-4 h-4" /> {answers.length} Solutions
+                                        </h3>
+                                        {!selectedQuestion.isResolved && (
+                                            <button 
+                                                onClick={() => setShowAnswerForm(true)} 
+                                                className="btn btn-primary py-2 px-6 h-auto text-xs font-[900]"
+                                            >
+                                                Contribute Answer
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {showAnswerForm && (
+                                        <motion.form 
+                                            initial={{ opacity: 0, y: -10 }} 
+                                            animate={{ opacity: 1, y: 0 }}
+                                            onSubmit={handleSubmitAnswer} 
+                                            className="bg-white p-6 rounded-[32px] border-2 border-primary-100 shadow-xl shadow-primary-600/5 mb-8"
+                                        >
+                                            <textarea
+                                                required
+                                                className="input-modern min-h-[150px] resize-none bg-slate-50/50 border-transparent focus:bg-white mb-4"
+                                                placeholder="Share your expertise to help others..."
+                                                value={newAnswer}
+                                                onChange={(e) => setNewAnswer(e.target.value)}
+                                            />
+                                            <div className="flex gap-3">
+                                                <button type="submit" className="btn btn-primary flex-1">Submit Solution</button>
+                                                <button type="button" onClick={() => setShowAnswerForm(false)} className="btn btn-ghost">Cancel</button>
+                                            </div>
+                                        </motion.form>
+                                    )}
+
+                                    <div className="space-y-6 pb-20">
+                                        {answers.length === 0 ? (
+                                            <div className="text-center py-20">
+                                                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 border border-slate-100 shadow-sm">
+                                                    <MessageCircle className="w-8 h-8 text-slate-100" />
+                                                </div>
+                                                <p className="text-slate-400 font-[900] uppercase text-[10px] tracking-widest">No solutions yet</p>
+                                            </div>
+                                        ) : (
+                                            answers.map((answer) => (
+                                                <AnswerCard
+                                                    key={answer._id}
+                                                    answer={answer}
+                                                    currentUser={user}
+                                                    questionOwnerId={selectedQuestion.userId._id}
+                                                    onVote={handleVoteAnswer}
+                                                    onAccept={handleAcceptAnswer}
+                                                />
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };
 
 export default RoomPage;
+
