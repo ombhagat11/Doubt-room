@@ -6,7 +6,9 @@ const errorHandler = (err, req, res, next) => {
   error.message = err.message;
 
   // Log to console for dev
-  console.error(err);
+  if (process.env.NODE_ENV === 'development') {
+    console.error(err);
+  }
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
@@ -22,14 +24,26 @@ const errorHandler = (err, req, res, next) => {
 
   // Mongoose validation error
   if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors).map(val => val.message);
+    const message = Object.values(err.errors).map(val => val.message).join(', ');
     error = new ErrorResponse(message, 400);
+  }
+
+  // JWT errors
+  if (err.name === 'JsonWebTokenError') {
+    const message = 'Invalid token, please log in again';
+    error = new ErrorResponse(message, 401);
+  }
+
+  if (err.name === 'TokenExpiredError') {
+    const message = 'Session expired, please log in again';
+    error = new ErrorResponse(message, 401);
   }
 
   res.status(error.statusCode || 500).json({
     success: false,
-    error: error.message || 'Server Error'
+    message: error.message || 'Internal Server Error'
   });
 };
 
 module.exports = errorHandler;
+
