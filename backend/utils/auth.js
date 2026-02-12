@@ -1,15 +1,15 @@
 const jwt = require('jsonwebtoken');
 
 // Generate JWT token
-exports.generateToken = (id) => {
+const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: process.env.JWT_EXPIRE
+        expiresIn: process.env.JWT_EXPIRE || '7d'
     });
 };
 
 // Send token response
-exports.sendTokenResponse = (user, statusCode, res) => {
-    const token = this.generateToken(user._id);
+const sendTokenResponse = (user, statusCode, res) => {
+    const token = generateToken(user._id);
 
     res.status(statusCode).json({
         success: true,
@@ -23,3 +23,5 @@ exports.sendTokenResponse = (user, statusCode, res) => {
         }
     });
 };
+
+module.exports = { generateToken, sendTokenResponse };

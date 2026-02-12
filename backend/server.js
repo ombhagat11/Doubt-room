@@ -1,14 +1,10 @@
 const path = require("path");
 require("dotenv").config();
 const express = require("express");
-const http = require("http");
 const cors = require("cors");
 const helmet = require("helmet");
-const morgan = require("morgan");
 const compression = require("compression");
 const hpp = require("hpp");
-const xss = require("xss-clean");
-const { Server } = require("socket.io");
 const connectDB = require("./config/db");
 const { apiLimiter } = require("./middleware/rateLimiter");
 const errorHandler = require("./middleware/error");
@@ -19,55 +15,87 @@ const roomRoutes = require("./routes/roomRoutes");
 const questionRoutes = require("./routes/questionRoutes");
 const answerRoutes = require("./routes/answerRoutes");
 
-// Import socket handler
-const socketHandler = require("./socket/socketHandler");
-
-// Connect to database
-connectDB();
-
 const app = express();
 
-// Trust proxy for Vercel/proxies (Fixes rate limiter issues)
+// Trust proxy for Vercel/proxies (fixes rate limiter issues)
 app.set("trust proxy", 1);
 
 // Security Middlewares
 app.use(
   helmet({
-    contentSecurityPolicy: false, // Disable for easier development if needed
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
   }),
 );
-app.use(xss()); // Prevent XSS attacks
-app.use(hpp()); // Prevent HTTP Parameter Pollution
+app.use(hpp());
 
-// Support CORS
+// CORS - deduplicated allowed origins
+const allowedOrigins = [
+  ...new Set(
+    [
+      process.env.FRONTEND_URL,
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ].filter(Boolean)
+  ),
+];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "*",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+      if (
+        allowedOrigins.some((allowed) => origin.startsWith(allowed)) ||
+        process.env.NODE_ENV !== "production"
+      ) {
+        return callback(null, true);
+      }
+      callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   }),
 );
 
-// Logging
-if (process.env.NODE_ENV === "development") {
-  app.use(morgan("dev"));
-} else {
-  app.use(morgan("combined"));
+// Logging - only in development and when running as persistent server
+if (process.env.NODE_ENV === "development" && require.main === module) {
+  try {
+    const morgan = require("morgan");
+    app.use(morgan("dev"));
+  } catch {
+    // morgan is optional
+  }
 }
 
-// Optimization
-app.use(compression()); // Compress all responses
+// Compression for responses
+app.use(compression());
 
-// Body parser
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ limit: "10mb", extended: true }));
+// Body parser with sensible limits
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ limit: "5mb", extended: true }));
 
 // Favicon noise reduction
 app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 
+// Ensure DB connection before API routes (serverless-friendly middleware)
+app.use("/api", async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error("DB middleware connection error:", err.message);
+    return res.status(503).json({
+      success: false,
+      message: "Database is temporarily unavailable. Please try again in a moment.",
+    });
+  }
+});
+
 // Apply rate limiting to all API routes
 app.use("/api/", apiLimiter);
 
-// Status route
+// Health check (placed before DB middleware via separate route)
 app.get("/api/health", (req, res) => {
   res.json({
     success: true,
@@ -77,7 +105,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Routes
+// Root endpoint
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -92,6 +120,7 @@ app.get("/", (req, res) => {
   });
 });
 
+// API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/questions", questionRoutes);
@@ -100,34 +129,43 @@ app.use("/api/answers", answerRoutes);
 // 404 handler
 app.use((req, res, next) => {
   const error = new Error(`Route not found - ${req.originalUrl}`);
-  error.statusCode = 404; // Set status code on error object
+  error.statusCode = 404;
   next(error);
 });
 
-// Advanced Error handling middleware
+// Error handling middleware
 app.use(errorHandler);
 
-// Create HTTP server
-const server = http.createServer(app);
-
-// Setup Socket.IO
-const io = new Server(server, {
-  cors: {
-    origin: process.env.FRONTEND_URL || "*",
-    credentials: true,
-    methods: ["GET", "POST"],
-  },
-  transports: ["websocket", "polling"],
-});
-
-// Initialize socket handlers
-socketHandler(io);
-
-// Export for Vercel
+// Export for Vercel serverless
 module.exports = app;
 
-// Start server only if not running on Vercel or if explicitly told
+// Start server with Socket.IO ONLY when running locally (not on Vercel)
 if (require.main === module) {
+  const http = require("http");
+  const { Server } = require("socket.io");
+  const socketHandler = require("./socket/socketHandler");
+
+  // Connect DB eagerly when running as a server (non-blocking)
+  connectDB()
+    .then(() => console.log("✅ Database ready"))
+    .catch((err) => console.error("⚠️ Database not ready (will retry per-request):", err.message));
+
+  const server = http.createServer(app);
+
+  // Setup Socket.IO (only works with a persistent server, NOT serverless)
+  const io = new Server(server, {
+    cors: {
+      origin: allowedOrigins.length > 0 ? allowedOrigins : "*",
+      credentials: true,
+      methods: ["GET", "POST"],
+    },
+    transports: ["websocket", "polling"],
+    pingTimeout: 60000,
+    pingInterval: 25000,
+  });
+
+  socketHandler(io);
+
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, () => {
     console.log("=".repeat(50));
@@ -135,6 +173,7 @@ if (require.main === module) {
     console.log(`📍 Port: ${PORT}`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
     console.log(`⚡ Socket.IO: Ready`);
+    console.log(`🔗 CORS: ${allowedOrigins.join(", ") || "*"}`);
     console.log("=".repeat(50));
   });
 }
@@ -142,5 +181,4 @@ if (require.main === module) {
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (err) => {
   console.error(`Unhandled Rejection: ${err.message}`);
-  // In production, we might want to shut down gracefully
 });

@@ -2,18 +2,18 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Room = require('../models/Room');
 
-// Store active connections
+// Store active connections (in-memory, only for persistent server)
 const activeUsers = new Map(); // socketId -> { userId, roomId, name, role }
-const roomUsers = new Map(); // roomId -> Set of socketIds
+const roomUsers = new Map();   // roomId -> Set of socketIds
 
 module.exports = (io) => {
-    // Socket.IO middleware for authentication
+    // Socket.IO authentication middleware
     io.use(async (socket, next) => {
         try {
             const token = socket.handshake.auth.token;
 
             if (!token) {
-                return next(new Error('Authentication error'));
+                return next(new Error('Authentication required'));
             }
 
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -29,16 +29,22 @@ module.exports = (io) => {
 
             next();
         } catch (error) {
-            next(new Error('Authentication error'));
+            console.error('Socket auth error:', error.message);
+            next(new Error('Authentication failed'));
         }
     });
 
     io.on('connection', (socket) => {
-        console.log(`User connected: ${socket.userName} (${socket.userId})`);
+        console.log(`🔌 User connected: ${socket.userName} (${socket.userId})`);
 
         // Join room
         socket.on('joinRoom', async ({ roomId }) => {
             try {
+                if (!roomId) {
+                    socket.emit('error', { message: 'Room ID is required' });
+                    return;
+                }
+
                 const room = await Room.findById(roomId);
 
                 if (!room || !room.isActive) {
@@ -69,19 +75,19 @@ module.exports = (io) => {
                 }
                 roomUsers.get(roomId).add(socket.id);
 
-                // Update room active users
+                // Update room active users count
                 const activeCount = roomUsers.get(roomId).size;
                 await Room.findByIdAndUpdate(roomId, {
                     activeCount,
                     $addToSet: { activeUsers: socket.userId }
-                });
+                }).catch(err => console.error('Room update error:', err.message));
 
-                // Get current active users in room
+                // Get current active users info
                 const usersInRoom = Array.from(roomUsers.get(roomId))
                     .map(socketId => activeUsers.get(socketId))
                     .filter(Boolean);
 
-                // Notify room
+                // Broadcast to room
                 io.to(roomId).emit('userJoined', {
                     userId: socket.userId,
                     name: socket.userName,
@@ -90,21 +96,23 @@ module.exports = (io) => {
                     activeCount
                 });
 
-                console.log(`${socket.userName} joined room ${roomId}`);
+                console.log(`📍 ${socket.userName} joined room ${roomId} (${activeCount} users)`);
             } catch (error) {
-                console.error('Join room error:', error);
+                console.error('Join room error:', error.message);
                 socket.emit('error', { message: 'Failed to join room' });
             }
         });
 
         // Leave room
         socket.on('leaveRoom', async ({ roomId }) => {
-            await leaveRoomCleanup(roomId, socket.id);
-            socket.leave(roomId);
-            socket.currentRoom = null;
+            if (roomId) {
+                await leaveRoomCleanup(roomId, socket.id);
+                socket.leave(roomId);
+                socket.currentRoom = null;
+            }
         });
 
-        // New question posted
+        // Real-time events - broadcast to room
         socket.on('askQuestion', (data) => {
             if (socket.currentRoom) {
                 io.to(socket.currentRoom).emit('newQuestion', {
@@ -115,7 +123,6 @@ module.exports = (io) => {
             }
         });
 
-        // New answer posted
         socket.on('answerQuestion', (data) => {
             if (socket.currentRoom) {
                 io.to(socket.currentRoom).emit('newAnswer', {
@@ -126,14 +133,12 @@ module.exports = (io) => {
             }
         });
 
-        // Answer upvoted
         socket.on('upvoteAnswer', (data) => {
             if (socket.currentRoom) {
                 io.to(socket.currentRoom).emit('answerUpvoted', data);
             }
         });
 
-        // Question resolved
         socket.on('markResolved', (data) => {
             if (socket.currentRoom) {
                 io.to(socket.currentRoom).emit('questionResolved', {
@@ -143,14 +148,13 @@ module.exports = (io) => {
             }
         });
 
-        // Question pinned
         socket.on('pinQuestion', (data) => {
             if (socket.currentRoom) {
                 io.to(socket.currentRoom).emit('questionPinned', data);
             }
         });
 
-        // User typing indicator
+        // Typing indicator
         socket.on('typing', ({ questionId, isTyping }) => {
             if (socket.currentRoom) {
                 socket.to(socket.currentRoom).emit('userTyping', {
@@ -163,8 +167,8 @@ module.exports = (io) => {
         });
 
         // Disconnect
-        socket.on('disconnect', async () => {
-            console.log(`User disconnected: ${socket.userName}`);
+        socket.on('disconnect', async (reason) => {
+            console.log(`🔌 User disconnected: ${socket.userName} (${reason})`);
 
             if (socket.currentRoom) {
                 await leaveRoomCleanup(socket.currentRoom, socket.id);
@@ -172,9 +176,14 @@ module.exports = (io) => {
 
             activeUsers.delete(socket.id);
         });
+
+        // Error handling
+        socket.on('error', (error) => {
+            console.error(`Socket error for ${socket.userName}:`, error.message);
+        });
     });
 
-    // Helper function to clean up room on leave
+    // Helper: clean up when a user leaves a room
     async function leaveRoomCleanup(roomId, socketId) {
         try {
             const userInfo = activeUsers.get(socketId);
@@ -184,18 +193,20 @@ module.exports = (io) => {
 
                 const activeCount = roomUsers.get(roomId).size;
 
-                // Update room
-                await Room.findByIdAndUpdate(roomId, {
-                    activeCount,
-                    $pull: { activeUsers: userInfo?.userId }
-                });
+                // Update room in DB
+                if (userInfo?.userId) {
+                    await Room.findByIdAndUpdate(roomId, {
+                        activeCount,
+                        $pull: { activeUsers: userInfo.userId }
+                    }).catch(err => console.error('Room cleanup error:', err.message));
+                }
 
                 // Get remaining users
                 const usersInRoom = Array.from(roomUsers.get(roomId))
                     .map(sid => activeUsers.get(sid))
                     .filter(Boolean);
 
-                // Notify room
+                // Notify room about departure
                 io.to(roomId).emit('userLeft', {
                     userId: userInfo?.userId,
                     name: userInfo?.name,
@@ -203,13 +214,13 @@ module.exports = (io) => {
                     activeCount
                 });
 
-                // Clean up empty room
+                // Clean up empty room tracking
                 if (activeCount === 0) {
                     roomUsers.delete(roomId);
                 }
             }
         } catch (error) {
-            console.error('Leave room cleanup error:', error);
+            console.error('Leave room cleanup error:', error.message);
         }
     }
 };

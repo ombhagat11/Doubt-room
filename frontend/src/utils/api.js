@@ -7,9 +7,10 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
+    timeout: 15000, // 15 second timeout
 });
 
-// Add token to requests
+// Add auth token to every request
 api.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem('token');
@@ -18,20 +19,31 @@ api.interceptors.request.use(
         }
         return config;
     },
-    (error) => {
-        return Promise.reject(error);
-    }
+    (error) => Promise.reject(error)
 );
 
-// Handle responses
+// Handle responses globally
 api.interceptors.response.use(
     (response) => response,
     (error) => {
+        // Handle 401 - token expired or invalid
         if (error.response?.status === 401) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = '/login';
+            const currentPath = window.location.pathname;
+            // Only redirect if not already on login/register/landing
+            if (!['/login', '/register', '/'].includes(currentPath)) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = '/login';
+            }
         }
+
+        // Handle network errors
+        if (!error.response && error.code === 'ECONNABORTED') {
+            error.message = 'Request timed out. Please try again.';
+        } else if (!error.response) {
+            error.message = 'Network error. Please check your connection.';
+        }
+
         return Promise.reject(error);
     }
 );

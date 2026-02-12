@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import { getSocket } from '../utils/socket';
+import { getSocket, isSocketConnected } from '../utils/socket';
 import Navbar from '../components/home/Navbar';
 import QuestionCard from '../components/QuestionCard';
 import AnswerCard from '../components/AnswerCard';
@@ -21,8 +21,11 @@ import {
     X,
     Send,
     Filter,
-    Activity
+    Activity,
+    RefreshCw
 } from 'lucide-react';
+
+const POLL_INTERVAL = 5000; // Poll every 5 seconds when socket is unavailable
 
 const RoomPage = () => {
     const { id } = useParams();
@@ -39,17 +42,79 @@ const RoomPage = () => {
     const [showAnswerForm, setShowAnswerForm] = useState(false);
     const [newQuestion, setNewQuestion] = useState({ text: '', priority: 'medium', image: null });
     const [newAnswer, setNewAnswer] = useState('');
-    const [filter, setFilter] = useState('pending'); // pending, resolved, all
+    const [filter, setFilter] = useState('pending');
     const [imagePreview, setImagePreview] = useState(null);
+    const [usingPolling, setUsingPolling] = useState(false);
     const socketRef = useRef(null);
+    const pollIntervalRef = useRef(null);
 
-    useEffect(() => {
-        fetchRoom();
-        fetchQuestions();
-
+    // Memoized fetch functions
+    const fetchRoom = useCallback(async () => {
         try {
-            const socket = getSocket();
+            const response = await api.get(`/rooms/${id}`);
+            setRoom(response.data.data);
+        } catch (err) {
+            setError(err.response?.data?.message || 'Failed to fetch room');
+        }
+    }, [id]);
+
+    const fetchQuestions = useCallback(async () => {
+        try {
+            const params = filter === 'all' ? {} : { resolved: filter === 'resolved' };
+            const response = await api.get(`/questions/room/${id}`, { params });
+            setQuestions(response.data.data);
+        } catch (err) {
+            setError(err.response?.data?.message || 'Failed to fetch questions');
+        }
+    }, [id, filter]);
+
+    const fetchAnswers = useCallback(async (questionId) => {
+        try {
+            const response = await api.get(`/answers/question/${questionId}`);
+            setAnswers(response.data.data);
+        } catch (err) {
+            console.error('Failed to fetch answers:', err);
+        }
+    }, []);
+
+    // Socket event handlers
+    const handleUserJoined = useCallback((data) => setActiveUsers(data.activeUsers || []), []);
+    const handleUserLeft = useCallback((data) => setActiveUsers(data.activeUsers || []), []);
+    const handleNewQuestion = useCallback(() => fetchQuestions(), [fetchQuestions]);
+    const handleNewAnswer = useCallback((data) => {
+        if (selectedQuestion && data.questionId === selectedQuestion._id) {
+            fetchAnswers(selectedQuestion._id);
+        }
+        fetchQuestions();
+    }, [selectedQuestion, fetchAnswers, fetchQuestions]);
+    const handleQuestionResolved = useCallback((data) => {
+        fetchQuestions();
+        if (selectedQuestion && data.questionId === selectedQuestion._id) {
+            setSelectedQuestion(prev => prev ? { ...prev, isResolved: true } : null);
+        }
+    }, [selectedQuestion, fetchQuestions]);
+    const handleQuestionPinned = useCallback(() => fetchQuestions(), [fetchQuestions]);
+    const handleAnswerUpvoted = useCallback(() => {
+        if (selectedQuestion) fetchAnswers(selectedQuestion._id);
+    }, [selectedQuestion, fetchAnswers]);
+
+    // Initialize: try socket, fall back to polling
+    useEffect(() => {
+        const initializeRoom = async () => {
+            setLoading(true);
+            await fetchRoom();
+            await fetchQuestions();
+            setLoading(false);
+        };
+
+        initializeRoom();
+
+        // Try to use socket
+        const socket = getSocket();
+        if (socket && socket.connected) {
             socketRef.current = socket;
+            setUsingPolling(false);
+
             socket.emit('joinRoom', { roomId: id });
             socket.on('userJoined', handleUserJoined);
             socket.on('userLeft', handleUserLeft);
@@ -61,75 +126,41 @@ const RoomPage = () => {
 
             return () => {
                 socket.emit('leaveRoom', { roomId: id });
-                socket.off('userJoined');
-                socket.off('userLeft');
-                socket.off('newQuestion');
-                socket.off('newAnswer');
-                socket.off('questionResolved');
-                socket.off('questionPinned');
-                socket.off('answerUpvoted');
+                socket.off('userJoined', handleUserJoined);
+                socket.off('userLeft', handleUserLeft);
+                socket.off('newQuestion', handleNewQuestion);
+                socket.off('newAnswer', handleNewAnswer);
+                socket.off('questionResolved', handleQuestionResolved);
+                socket.off('questionPinned', handleQuestionPinned);
+                socket.off('answerUpvoted', handleAnswerUpvoted);
             };
-        } catch (err) {
-            console.error('Socket error:', err);
-        }
-    }, [id]);
+        } else {
+            // Socket unavailable - use polling fallback
+            setUsingPolling(true);
+            console.log('📡 Using polling fallback (socket unavailable)');
 
+            pollIntervalRef.current = setInterval(() => {
+                fetchQuestions();
+                fetchRoom(); // Refresh active user count
+            }, POLL_INTERVAL);
+
+            return () => {
+                if (pollIntervalRef.current) {
+                    clearInterval(pollIntervalRef.current);
+                }
+            };
+        }
+    }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Re-fetch questions when filter changes
+    useEffect(() => {
+        fetchQuestions();
+    }, [filter, fetchQuestions]);
+
+    // Fetch answers when selected question changes
     useEffect(() => {
         if (selectedQuestion) fetchAnswers(selectedQuestion._id);
-    }, [selectedQuestion]);
-
-    useEffect(() => {
-        fetchQuestions();
-    }, [filter]);
-
-    const handleUserJoined = (data) => setActiveUsers(data.activeUsers || []);
-    const handleUserLeft = (data) => setActiveUsers(data.activeUsers || []);
-    const handleNewQuestion = () => fetchQuestions();
-    const handleNewAnswer = (data) => {
-        if (selectedQuestion && data.questionId === selectedQuestion._id) fetchAnswers(selectedQuestion._id);
-        fetchQuestions();
-    };
-    const handleQuestionResolved = (data) => {
-        fetchQuestions();
-        if (selectedQuestion && data.questionId === selectedQuestion._id) {
-            setSelectedQuestion({ ...selectedQuestion, isResolved: true });
-        }
-    };
-    const handleQuestionPinned = () => fetchQuestions();
-    const handleAnswerUpvoted = () => {
-        if (selectedQuestion) fetchAnswers(selectedQuestion._id);
-    };
-
-    const fetchRoom = async () => {
-        try {
-            const response = await api.get(`/rooms/${id}`);
-            setRoom(response.data.data);
-        } catch (err) {
-            setError(err.response?.data?.message || 'Failed to fetch room');
-        }
-    };
-
-    const fetchQuestions = async () => {
-        try {
-            setLoading(true);
-            const params = filter === 'all' ? {} : { resolved: filter === 'resolved' };
-            const response = await api.get(`/questions/room/${id}`, { params });
-            setQuestions(response.data.data);
-        } catch (err) {
-            setError(err.response?.data?.message || 'Failed to fetch questions');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchAnswers = async (questionId) => {
-        try {
-            const response = await api.get(`/answers/question/${questionId}`);
-            setAnswers(response.data.data);
-        } catch (err) {
-            console.error('Failed to fetch answers:', err);
-        }
-    };
+    }, [selectedQuestion, fetchAnswers]);
 
     const handleImageUpload = (e) => {
         const file = e.target.files[0];
@@ -154,7 +185,9 @@ const RoomPage = () => {
                 priority: newQuestion.priority,
                 image: newQuestion.image
             });
-            if (socketRef.current) socketRef.current.emit('askQuestion', response.data.data);
+            if (socketRef.current?.connected) {
+                socketRef.current.emit('askQuestion', response.data.data);
+            }
             setNewQuestion({ text: '', priority: 'medium', image: null });
             setImagePreview(null);
             setShowQuestionForm(false);
@@ -169,7 +202,9 @@ const RoomPage = () => {
         if (!selectedQuestion) return;
         try {
             const response = await api.post('/answers', { questionId: selectedQuestion._id, text: newAnswer });
-            if (socketRef.current) socketRef.current.emit('answerQuestion', { questionId: selectedQuestion._id, answer: response.data.data });
+            if (socketRef.current?.connected) {
+                socketRef.current.emit('answerQuestion', { questionId: selectedQuestion._id, answer: response.data.data });
+            }
             setNewAnswer('');
             setShowAnswerForm(false);
             fetchAnswers(selectedQuestion._id);
@@ -181,7 +216,9 @@ const RoomPage = () => {
     const handleResolveQuestion = async (questionId) => {
         try {
             await api.put(`/questions/${questionId}/resolve`);
-            if (socketRef.current) socketRef.current.emit('markResolved', { questionId });
+            if (socketRef.current?.connected) {
+                socketRef.current.emit('markResolved', { questionId });
+            }
             fetchQuestions();
         } catch (err) {
             setError(err.response?.data?.message || 'Failed to resolve');
@@ -191,7 +228,9 @@ const RoomPage = () => {
     const handlePinQuestion = async (questionId) => {
         try {
             await api.put(`/questions/${questionId}/pin`);
-            if (socketRef.current) socketRef.current.emit('pinQuestion', { questionId });
+            if (socketRef.current?.connected) {
+                socketRef.current.emit('pinQuestion', { questionId });
+            }
             fetchQuestions();
         } catch (err) {
             setError(err.response?.data?.message || 'Failed to pin');
@@ -201,7 +240,9 @@ const RoomPage = () => {
     const handleVoteAnswer = async (answerId) => {
         try {
             await api.put(`/answers/${answerId}/vote`);
-            if (socketRef.current) socketRef.current.emit('upvoteAnswer', { answerId });
+            if (socketRef.current?.connected) {
+                socketRef.current.emit('upvoteAnswer', { answerId });
+            }
             fetchAnswers(selectedQuestion._id);
         } catch (err) {
             setError(err.response?.data?.message || 'Failed to vote');
@@ -257,7 +298,12 @@ const RoomPage = () => {
                                 <span className="px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-[10px] font-black uppercase tracking-widest border border-primary-200">
                                     {room?.topic}
                                 </span>
-                                {activeUsers.length > 0 && (
+                                {usingPolling ? (
+                                    <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-full border border-amber-100">
+                                        <RefreshCw className="w-3 h-3 animate-spin" />
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Live Polling</span>
+                                    </div>
+                                ) : activeUsers.length > 0 && (
                                     <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100">
                                         <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
                                         <span className="text-[10px] font-black uppercase tracking-widest">{activeUsers.length} Online</span>
@@ -296,8 +342,13 @@ const RoomPage = () => {
                 </motion.div>
 
                 {error && (
-                    <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl mb-8 flex items-center gap-3 font-bold text-sm">
-                        <Activity className="w-5 h-5" /> {error}
+                    <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl mb-8 flex items-center justify-between gap-3 font-bold text-sm">
+                        <div className="flex items-center gap-3">
+                            <Activity className="w-5 h-5 flex-shrink-0" /> {error}
+                        </div>
+                        <button onClick={() => setError('')} className="p-1 hover:bg-red-100 rounded-lg transition-colors">
+                            <X className="w-4 h-4" />
+                        </button>
                     </div>
                 )}
 
@@ -334,21 +385,29 @@ const RoomPage = () => {
                                     <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                                         <Users className="w-4 h-4" /> Presence
                                     </h3>
-                                    <div className="flex -space-x-3 overflow-hidden p-1">
-                                        {activeUsers.slice(0, 5).map((u, i) => (
-                                            <div key={i} className="inline-block h-10 w-10 rounded-xl ring-4 ring-white bg-slate-100 flex items-center justify-center font-black text-xs text-slate-600 border border-slate-200 uppercase tracking-tighter">
-                                                {u.name?.charAt(0)}
+                                    {activeUsers.length > 0 ? (
+                                        <>
+                                            <div className="flex -space-x-3 overflow-hidden p-1">
+                                                {activeUsers.slice(0, 5).map((u, i) => (
+                                                    <div key={i} className="inline-block h-10 w-10 rounded-xl ring-4 ring-white bg-slate-100 flex items-center justify-center font-black text-xs text-slate-600 border border-slate-200 uppercase tracking-tighter">
+                                                        {u.name?.charAt(0)}
+                                                    </div>
+                                                ))}
+                                                {activeUsers.length > 5 && (
+                                                    <div className="flex items-center justify-center h-10 w-10 rounded-xl ring-4 ring-white bg-slate-900 text-white text-[10px] font-black">
+                                                        +{activeUsers.length - 5}
+                                                    </div>
+                                                )}
                                             </div>
-                                        ))}
-                                        {activeUsers.length > 5 && (
-                                            <div className="flex items-center justify-center h-10 w-10 rounded-xl ring-4 ring-white bg-slate-900 text-white text-[10px] font-black">
-                                                +{activeUsers.length - 5}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <p className="text-xs text-slate-400 font-bold mt-3 italic">
-                                        {activeUsers.length} members are currently active
-                                    </p>
+                                            <p className="text-xs text-slate-400 font-bold mt-3 italic">
+                                                {activeUsers.length} members are currently active
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <p className="text-xs text-slate-400 font-bold italic">
+                                            {usingPolling ? 'Real-time presence unavailable' : 'No active users'}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="bg-primary-50 rounded-2xl p-4">
@@ -588,4 +647,3 @@ const RoomPage = () => {
 };
 
 export default RoomPage;
-
